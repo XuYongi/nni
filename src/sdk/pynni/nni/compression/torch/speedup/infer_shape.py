@@ -9,6 +9,7 @@ The other is given input shape, infer its output shape and initialization parame
 import torch
 
 
+
 class CoarseMask:
     """
     Coarse grained mask for a given tensor, here tensor could be weights,
