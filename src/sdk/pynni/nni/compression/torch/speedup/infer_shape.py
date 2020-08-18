@@ -241,7 +241,15 @@ infer_from_inshape = {
     'aten::cat': lambda module_mask, mask, cat_info, last_visited: cat_inshape(module_mask, mask, cat_info, last_visited),
     'aten::mean': lambda module_masks, mask, shape: mean_inshape(module_masks, mask, shape),
     'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
-    'Dropout2d': lambda module_masks, mask: dropout_inshape(module_masks, mask)
+    'Dropout2d': lambda module_masks, mask: dropout_inshape(module_masks, mask),
+
+    'LeakyReLU': lambda module_masks, mask: lrelu_inshape(module_masks, mask),
+    'Sigmoid': lambda module_masks, mask: sigmoid_inshape(module_masks, mask),
+    'Pad': lambda module_masks, mask: pad_inshape(module_masks, mask),
+    'Upsample': lambda module_masks, mask: pad_inshape(module_masks, mask),
+    'ConvTranspose2d': lambda module_masks, mask: convtranspose2d_inshape(module_masks, mask),
+    'InstanceNorm2d': lambda module_masks, mask: instancenorm2d_inshape(module_masks, mask),
+
 }
 
 """
@@ -366,6 +374,35 @@ def add_inshape(module_masks, mask):
 
 
 def batchnorm2d_inshape(module_masks, mask):
+    """
+    We assume only the second dimension has coarse grained mask
+
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the batchnorm2d
+    mask : CoarseMask
+        The mask of its input tensor
+
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    assert isinstance(mask, CoarseMask)
+    assert mask.mask_index[1] is not None
+    assert mask.mask_index[0] is None
+    assert mask.mask_index[2] is None
+    assert mask.mask_index[3] is None
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    weight_cmask = CoarseMask(num_dim=1)
+    weight_cmask.add_index_mask(dim=0, index=mask.mask_index[1])
+    module_masks.set_param_masks('weight', weight_cmask)
+    module_masks.set_param_masks('bias', weight_cmask)
+    return mask
+
+def instancenorm2d_inshape(module_masks, mask):
     """
     We assume only the second dimension has coarse grained mask
 
@@ -546,6 +583,82 @@ def relu_inshape(module_masks, mask):
     module_masks.set_output_mask(mask)
     return mask
 
+def lrelu_inshape(module_masks, mask):
+    """
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the leaky relu
+    mask : CoarseMask
+        The mask of its input tensor
+
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    assert isinstance(mask, CoarseMask)
+    # TODO: double check this assert, is it possible that a module is passed twice
+    if module_masks.input_mask is not None:
+        # check if has a mask conflict
+        assert module_masks.input_mask == mask
+        # No need to pass the mask again
+        return None
+    # assert module_masks.input_mask is None, "A relu op can only be processed once"
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return mask
+def sigmoid_inshape(module_masks, mask):
+    """
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the leaky relu
+    mask : CoarseMask
+        The mask of its input tensor
+
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    assert isinstance(mask, CoarseMask)
+    # TODO: double check this assert, is it possible that a module is passed twice
+    if module_masks.input_mask is not None:
+        # check if has a mask conflict
+        assert module_masks.input_mask == mask
+        # No need to pass the mask again
+        return None
+    # assert module_masks.input_mask is None, "A relu op can only be processed once"
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return mask
+def pad_inshape(module_masks, mask):
+    """
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the Pad(user fuction/module)
+    mask : CoarseMask
+        The mask of its input tensor
+
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    assert isinstance(mask, CoarseMask)
+    # TODO: double check this assert, is it possible that a module is passed twice
+    if module_masks.input_mask is not None:
+        # check if has a mask conflict
+        assert module_masks.input_mask == mask
+        # No need to pass the mask again
+        return None
+    # assert module_masks.input_mask is None, "A relu op can only be processed once"
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return mask
+
 
 def batchnorm2d_mask(module_masks, mask):
     """
@@ -581,6 +694,8 @@ def batchnorm2d_mask(module_masks, mask):
     output_cmask.add_index_mask(dim=1, index=nonzero_index)
     module_masks.set_output_mask(output_cmask)
     return input_cmask, output_cmask
+
+
 
 
 def conv2d_mask(module_masks, mask):
@@ -660,6 +775,7 @@ def conv2d_mask(module_masks, mask):
     return None, module_masks.output_mask
 
 
+
 def conv2d_inshape(module_masks, mask):
     """
     Shape change of input tensor does not affect the shape of its output tensor
@@ -684,6 +800,46 @@ def conv2d_inshape(module_masks, mask):
         # than once, such as a concat operation.
         assert module_masks.input_mask <= mask
         module_masks.input_mask.merge(mask)
+    return None
+
+def convtranspose2d_inshape(module_masks, mask):
+    """
+    Shape change of input tensor does not affect the shape of its output tensor
+
+    Parameters
+    ----------
+    module_masks : ModuleMasks
+        The ModuleMasks instance of the ConvTranspose2d
+    mask : CoarseMask
+        The mask of its input tensor
+
+    Returns
+    -------
+    CoarseMask
+        The mask of its output tensor
+    """
+    print("***********transposeInputmask\n",mask)
+    assert isinstance(mask, CoarseMask)
+    assert mask.mask_index[1] is not None
+    assert mask.mask_index[0] is None
+    assert mask.mask_index[2] is None
+    assert mask.mask_index[3] is None
+
+    if module_masks.input_mask is None:
+        module_masks.set_input_mask(mask)
+    else:
+        # the same conv layer may be accessed more
+        # than once, such as a concat operation.
+        assert module_masks.input_mask <= mask
+        module_masks.input_mask.merge(mask)
+    # # infer shape of parameters
+    # weight_cmask = CoarseMask(num_dim=4)
+    # weight_cmask.add_index_mask(dim=1, index=mask.mask_index[1])
+    # bias_cmask = CoarseMask(num_dim=1)
+    # bias_cmask.add_index_mask(dim=0, index=mask.mask_index[0])
+    # module_masks.set_param_masks('weight', weight_cmask)
+    # module_masks.set_param_masks('bias', None)
+    # # out shape is not changed
     return None
 
 
